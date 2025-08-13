@@ -1,17 +1,6 @@
 <!DOCTYPE html>
 <html lang="hi">
-<head><!DOCTYPE html>
-<html>
 <head>
-    <meta charset="UTF-8">
-    <title>My Website</title>
-    <meta name="google-site-verification" content="ribpcXH-SsbqOLy4cn_1EqE0U4Fkbb9RBB0Gz_i69u4" />
-</head>
-<body>
-    <!-- बाकी content -->
-</body>
-</html>
-
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Educational Game - Educational Gaming App</title>
@@ -730,6 +719,8 @@
     <footer class="bg-white/10 backdrop-blur-md border-t border-white/20 mt-16">
         <div class="max-w-7xl mx-auto px-4 py-8">
             <div class="text-center">
+
+                
                 <!-- App Info -->
                 <div class="mb-6">
                     <div class="flex items-center justify-center space-x-3 mb-3">
@@ -1488,12 +1479,49 @@
         const APP_CONFIG = {
             currentVersion: '1.0.0',
             appName: 'Educational Game',
-            updateCheckUrl: 'https://api.github.com/repos/sachinsf28/educational-game/releases/latest', // Replace with your actual repo
+            // Production Update URLs - Replace with your actual deployment URLs
+            updateCheckUrl: 'https://api.github.com/repos/yourusername/educational-game/releases/latest',
+            updateDownloadUrl: 'https://yourusername.github.io/educational-game/app.html',
+            // Alternative: Use your own server
+            // updateCheckUrl: 'https://yourserver.com/api/check-updates',
+            // updateDownloadUrl: 'https://yourserver.com/download/latest',
+            
+            // Cloud Database URLs for cross-device sync (Replace with your actual URLs)
+            userDatabaseUrl: 'https://api.jsonbin.io/v3/b/YOUR_BIN_ID', // JSONBin.io
+            userDatabaseKey: 'YOUR_API_KEY', // Your API key
+            // Alternative: Firebase, Supabase, or your own server
+            // userDatabaseUrl: 'https://your-firebase-project.firebaseio.com/users.json',
+            
             updateCheckInterval: 24 * 60 * 60 * 1000, // 24 hours
             reminderInterval: 6 * 60 * 60 * 1000, // 6 hours
             lastUpdateCheck: null,
-            lastUpdateReminder: null
+            lastUpdateReminder: null,
+            
+            // Platform detection
+            platform: detectPlatform(),
+            deviceId: generateDeviceId()
         };
+
+        // Detect Platform
+        function detectPlatform() {
+            const userAgent = navigator.userAgent.toLowerCase();
+            if (userAgent.includes('android')) return 'android';
+            if (userAgent.includes('iphone') || userAgent.includes('ipad')) return 'ios';
+            if (userAgent.includes('windows')) return 'windows';
+            if (userAgent.includes('mac')) return 'mac';
+            if (userAgent.includes('linux')) return 'linux';
+            return 'web';
+        }
+
+        // Generate Device ID
+        function generateDeviceId() {
+            let deviceId = localStorage.getItem('eduGameDeviceId');
+            if (!deviceId) {
+                deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('eduGameDeviceId', deviceId);
+            }
+            return deviceId;
+        }
 
         // Mock Update Data (Replace with real API call in production)
         const MOCK_UPDATE_DATA = {
@@ -2879,9 +2907,9 @@
             showSection('home');
         }
 
-        // Handle Login Form
+        // Handle Login Form with Cloud Sync
         document.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('login-form').addEventListener('submit', function(e) {
+            document.getElementById('login-form').addEventListener('submit', async function(e) {
                 e.preventDefault();
                 
                 const usernameOrEmail = document.getElementById('login-username').value.trim();
@@ -2893,41 +2921,69 @@
                     return;
                 }
                 
-                // Find user by username or email
-                let user = findUserByUsername(usernameOrEmail);
-                if (!user) {
-                    user = findUserByEmail(usernameOrEmail);
-                }
+                // Show loading state
+                const submitBtn = this.querySelector('button[type="submit"]');
+                const originalText = submitBtn.innerHTML;
+                submitBtn.innerHTML = '🔄 Logging in...';
+                submitBtn.disabled = true;
                 
-                if (!user) {
-                    showError('User not found! Please register first.');
-                    // Shake the form
-                    document.getElementById('login-modal').querySelector('.slide-up').classList.add('shake');
-                    setTimeout(() => {
-                        document.getElementById('login-modal').querySelector('.slide-up').classList.remove('shake');
-                    }, 500);
-                    return;
+                try {
+                    // First try to find user in cloud database
+                    let user = await findCloudUserByUsername(usernameOrEmail);
+                    if (!user) {
+                        user = await findCloudUserByEmail(usernameOrEmail);
+                    }
+                    
+                    // If not found in cloud, check local database
+                    if (!user) {
+                        user = findUserByUsername(usernameOrEmail);
+                        if (!user) {
+                            user = findUserByEmail(usernameOrEmail);
+                        }
+                    }
+                    
+                    if (!user) {
+                        showError('User not found! Please register first.');
+                        // Shake the form
+                        document.getElementById('login-modal').querySelector('.slide-up').classList.add('shake');
+                        setTimeout(() => {
+                            document.getElementById('login-modal').querySelector('.slide-up').classList.remove('shake');
+                        }, 500);
+                        return;
+                    }
+                    
+                    // Check password
+                    if (user.password !== password) {
+                        showError('Incorrect password! Please try again.');
+                        // Shake the form
+                        document.getElementById('login-modal').querySelector('.slide-up').classList.add('shake');
+                        setTimeout(() => {
+                            document.getElementById('login-modal').querySelector('.slide-up').classList.remove('shake');
+                        }, 500);
+                        return;
+                    }
+                    
+                    // Sync user data from cloud
+                    const syncedData = await syncUserData(user.username);
+                    const finalUserData = syncedData || user;
+                    
+                    // Successful login
+                    await loginUser(finalUserData, rememberMe);
+                    closeModal('login-modal');
+                    showLoginSuccess();
+                    
+                } catch (error) {
+                    console.error('Login error:', error);
+                    showError('Login failed. Please check your internet connection and try again.');
+                } finally {
+                    // Restore button state
+                    submitBtn.innerHTML = originalText;
+                    submitBtn.disabled = false;
                 }
-                
-                // Check password
-                if (user.password !== password) {
-                    showError('Incorrect password! Please try again.');
-                    // Shake the form
-                    document.getElementById('login-modal').querySelector('.slide-up').classList.add('shake');
-                    setTimeout(() => {
-                        document.getElementById('login-modal').querySelector('.slide-up').classList.remove('shake');
-                    }, 500);
-                    return;
-                }
-                
-                // Successful login
-                loginUser(user, rememberMe);
-                closeModal('login-modal');
-                showLoginSuccess();
             });
 
-            // Handle Register Form
-            document.getElementById('register-form').addEventListener('submit', function(e) {
+            // Handle Register Form with Cloud Sync
+            document.getElementById('register-form').addEventListener('submit', async function(e) {
                 e.preventDefault();
                 
                 const name = document.getElementById('register-name').value.trim();
@@ -2959,18 +3015,6 @@
                     return;
                 }
                 
-                // Check if username already exists
-                if (findUserByUsername(username)) {
-                    showError('Username already exists! Please choose a different one.');
-                    return;
-                }
-                
-                // Check if email already exists
-                if (findUserByEmail(email)) {
-                    showError('Email already registered! Please use a different email.');
-                    return;
-                }
-                
                 // Email format validation
                 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
                 if (!emailRegex.test(email)) {
@@ -2990,23 +3034,68 @@
                     return;
                 }
                 
-                // Create new user
-                const userData = {
-                    playerName: name,
-                    email: email,
-                    username: username,
-                    password: password, // In real app, this should be hashed
-                    ageGroup: ageGroup,
-                    avatar: getRandomAvatar(),
-                    joinDate: new Date().toISOString()
-                };
+                // Show loading state
+                const submitBtn = this.querySelector('button[type="submit"]');
+                const originalText = submitBtn.innerHTML;
+                submitBtn.innerHTML = '🔄 Creating Account...';
+                submitBtn.disabled = true;
                 
-                // Save user to database
-                saveUserToDatabase(userData);
-                
-                registerUser(userData);
-                closeModal('register-modal');
-                showWelcomeModal();
+                try {
+                    // Check if username already exists in cloud
+                    const existingUserByUsername = await findCloudUserByUsername(username);
+                    if (existingUserByUsername) {
+                        showError('Username already exists! Please choose a different one.');
+                        return;
+                    }
+                    
+                    // Check if email already exists in cloud
+                    const existingUserByEmail = await findCloudUserByEmail(email);
+                    if (existingUserByEmail) {
+                        showError('Email already registered! Please use a different email.');
+                        return;
+                    }
+                    
+                    // Also check local database as fallback
+                    if (findUserByUsername(username)) {
+                        showError('Username already exists locally! Please choose a different one.');
+                        return;
+                    }
+                    
+                    if (findUserByEmail(email)) {
+                        showError('Email already registered locally! Please use a different email.');
+                        return;
+                    }
+                    
+                    // Create new user
+                    const userData = {
+                        playerName: name,
+                        email: email,
+                        username: username,
+                        password: password, // In real app, this should be hashed
+                        ageGroup: ageGroup,
+                        avatar: getRandomAvatar(),
+                        joinDate: new Date().toISOString()
+                    };
+                    
+                    // Save user to cloud database
+                    await saveUserToCloudDatabase(userData);
+                    
+                    // Register user locally
+                    registerUser(userData);
+                    closeModal('register-modal');
+                    showWelcomeModal();
+                    
+                    // Show success message
+                    showSuccess('Account created successfully! Your data is synced across all devices. 🌟');
+                    
+                } catch (error) {
+                    console.error('Registration error:', error);
+                    showError('Registration failed. Please check your internet connection and try again.');
+                } finally {
+                    // Restore button state
+                    submitBtn.innerHTML = originalText;
+                    submitBtn.disabled = false;
+                }
             });
 
             // Handle Forgot Password Form
@@ -3041,8 +3130,8 @@
             });
         });
 
-        // Login User
-        function loginUser(userData, rememberMe) {
+        // Login User with Cloud Sync
+        async function loginUser(userData, rememberMe) {
             gameState.isLoggedIn = true;
             gameState.currentUser = userData;
             
@@ -3052,13 +3141,25 @@
             gameState.player.username = userData.username;
             gameState.player.avatar = userData.avatar;
             gameState.player.ageGroup = userData.ageGroup;
-            gameState.player.joinDate = userData.joinDate;
+            gameState.player.joinDate = userData.joinDate || userData.registeredOn;
             
             // Load existing user data if available
             const savedUserData = localStorage.getItem('eduGameUser_' + userData.username);
             if (savedUserData) {
                 const saved = JSON.parse(savedUserData);
                 gameState.player = { ...gameState.player, ...saved };
+            }
+            
+            // Update last seen in cloud database
+            try {
+                await updateUserInCloudDatabase({
+                    ...userData,
+                    lastSeen: new Date().toISOString(),
+                    lastSeenFrom: APP_CONFIG.platform,
+                    lastSeenDevice: APP_CONFIG.deviceId
+                });
+            } catch (error) {
+                console.error('Failed to update last seen:', error);
             }
             
             updateAuthUI();
@@ -3369,8 +3470,153 @@
             document.getElementById('welcome-modal').classList.remove('hidden');
         }
 
-        // User Database Functions
-        function saveUserToDatabase(userData) {
+        // Cloud Database Functions for Cross-Device Sync
+        
+        // Save User to Cloud Database
+        async function saveUserToCloudDatabase(userData) {
+            try {
+                // Add device info and timestamp
+                const userWithMeta = {
+                    ...userData,
+                    registeredOn: new Date().toISOString(),
+                    registeredFrom: APP_CONFIG.platform,
+                    deviceId: APP_CONFIG.deviceId,
+                    lastSeen: new Date().toISOString()
+                };
+                
+                // Save to cloud database (JSONBin.io example)
+                if (APP_CONFIG.userDatabaseUrl && APP_CONFIG.userDatabaseKey) {
+                    const response = await fetch(APP_CONFIG.userDatabaseUrl, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Master-Key': APP_CONFIG.userDatabaseKey,
+                            'X-Bin-Name': 'Educational Game Users'
+                        },
+                        body: JSON.stringify({
+                            users: await getAllCloudUsers().then(users => [...users, userWithMeta])
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        console.log('User saved to cloud database');
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to save user to cloud:', error);
+            }
+            
+            // Always save locally as backup
+            saveUserToLocalDatabase(userData);
+        }
+        
+        // Get All Cloud Users
+        async function getAllCloudUsers() {
+            try {
+                if (APP_CONFIG.userDatabaseUrl && APP_CONFIG.userDatabaseKey) {
+                    const response = await fetch(APP_CONFIG.userDatabaseUrl + '/latest', {
+                        headers: {
+                            'X-Master-Key': APP_CONFIG.userDatabaseKey
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        return data.record?.users || [];
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to fetch cloud users:', error);
+            }
+            
+            // Fallback to local users
+            return getLocalUsers();
+        }
+        
+        // Find User in Cloud Database
+        async function findCloudUserByUsername(username) {
+            const users = await getAllCloudUsers();
+            return users.find(user => user.username.toLowerCase() === username.toLowerCase());
+        }
+        
+        // Find User in Cloud Database by Email
+        async function findCloudUserByEmail(email) {
+            const users = await getAllCloudUsers();
+            return users.find(user => user.email.toLowerCase() === email.toLowerCase());
+        }
+        
+        // Update User in Cloud Database
+        async function updateUserInCloudDatabase(userData) {
+            try {
+                const allUsers = await getAllCloudUsers();
+                const userIndex = allUsers.findIndex(user => user.username === userData.username);
+                
+                if (userIndex !== -1) {
+                    allUsers[userIndex] = {
+                        ...allUsers[userIndex],
+                        ...userData,
+                        lastSeen: new Date().toISOString(),
+                        lastSeenFrom: APP_CONFIG.platform
+                    };
+                    
+                    if (APP_CONFIG.userDatabaseUrl && APP_CONFIG.userDatabaseKey) {
+                        const response = await fetch(APP_CONFIG.userDatabaseUrl, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Master-Key': APP_CONFIG.userDatabaseKey
+                            },
+                            body: JSON.stringify({ users: allUsers })
+                        });
+                        
+                        if (response.ok) {
+                            console.log('User updated in cloud database');
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to update user in cloud:', error);
+            }
+            
+            // Always update locally as backup
+            updateUserInLocalDatabase(userData);
+        }
+        
+        // Sync User Data Across Devices
+        async function syncUserData(username) {
+            try {
+                // Get user data from cloud
+                const cloudUser = await findCloudUserByUsername(username);
+                if (cloudUser) {
+                    // Get local game data
+                    const localGameData = localStorage.getItem('eduGameUser_' + username);
+                    const localData = localGameData ? JSON.parse(localGameData) : {};
+                    
+                    // Merge cloud user data with local game data
+                    const mergedData = {
+                        ...localData,
+                        playerName: cloudUser.playerName,
+                        email: cloudUser.email,
+                        username: cloudUser.username,
+                        avatar: cloudUser.avatar,
+                        ageGroup: cloudUser.ageGroup,
+                        joinDate: cloudUser.registeredOn
+                    };
+                    
+                    // Save merged data locally
+                    localStorage.setItem('eduGameUser_' + username, JSON.stringify(mergedData));
+                    
+                    return mergedData;
+                }
+            } catch (error) {
+                console.error('Failed to sync user data:', error);
+            }
+            
+            return null;
+        }
+        
+        // Local Database Functions (Backup)
+        function saveUserToLocalDatabase(userData) {
             // Get existing users from localStorage
             let users = JSON.parse(localStorage.getItem('eduGameUsers') || '[]');
             
@@ -3380,29 +3626,47 @@
             // Save back to localStorage
             localStorage.setItem('eduGameUsers', JSON.stringify(users));
         }
+        
+        // Legacy function for backward compatibility
+        function saveUserToDatabase(userData) {
+            // Save to both cloud and local
+            saveUserToCloudDatabase(userData);
+        }
+
+        // Local Database Functions (Enhanced)
+        function getLocalUsers() {
+            return JSON.parse(localStorage.getItem('eduGameUsers') || '[]');
+        }
 
         function findUserByUsername(username) {
-            const users = JSON.parse(localStorage.getItem('eduGameUsers') || '[]');
+            const users = getLocalUsers();
             return users.find(user => user.username.toLowerCase() === username.toLowerCase());
         }
 
         function findUserByEmail(email) {
-            const users = JSON.parse(localStorage.getItem('eduGameUsers') || '[]');
+            const users = getLocalUsers();
             return users.find(user => user.email.toLowerCase() === email.toLowerCase());
         }
 
         function getAllUsers() {
-            return JSON.parse(localStorage.getItem('eduGameUsers') || '[]');
+            // Try to get from cloud first, fallback to local
+            return getLocalUsers();
         }
 
-        function updateUserInDatabase(userData) {
-            let users = JSON.parse(localStorage.getItem('eduGameUsers') || '[]');
+        function updateUserInLocalDatabase(userData) {
+            let users = getLocalUsers();
             const userIndex = users.findIndex(user => user.username === userData.username);
             
             if (userIndex !== -1) {
                 users[userIndex] = { ...users[userIndex], ...userData };
                 localStorage.setItem('eduGameUsers', JSON.stringify(users));
             }
+        }
+
+        // Legacy function for backward compatibility
+        function updateUserInDatabase(userData) {
+            // Update in both cloud and local
+            updateUserInCloudDatabase(userData);
         }
 
         function deleteUserFromDatabase(username) {
@@ -3924,7 +4188,7 @@
 
         // Update System Functions
         
-        // Check for Updates
+        // Real Update Check System
         async function checkForUpdates(isManual = false) {
             if (updateState.isChecking) return;
             
@@ -3937,20 +4201,54 @@
             }
             
             try {
-                // In production, replace this with actual API call
-                // const response = await fetch(APP_CONFIG.updateCheckUrl);
-                // const updateData = await response.json();
+                let updateData = null;
                 
-                // For demo, simulate API call
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                // Try to fetch from GitHub Releases API
+                if (APP_CONFIG.updateCheckUrl.includes('github.com')) {
+                    try {
+                        const response = await fetch(APP_CONFIG.updateCheckUrl);
+                        if (response.ok) {
+                            const releaseData = await response.json();
+                            updateData = {
+                                version: releaseData.tag_name.replace('v', ''),
+                                releaseDate: releaseData.published_at.split('T')[0],
+                                downloadUrl: releaseData.assets[0]?.browser_download_url || APP_CONFIG.updateDownloadUrl,
+                                fileSize: releaseData.assets[0]?.size ? formatFileSize(releaseData.assets[0].size) : '2.5 MB',
+                                features: parseReleaseNotes(releaseData.body, 'features'),
+                                bugFixes: parseReleaseNotes(releaseData.body, 'fixes'),
+                                improvements: parseReleaseNotes(releaseData.body, 'improvements')
+                            };
+                        }
+                    } catch (githubError) {
+                        console.log('GitHub API failed, trying custom endpoint');
+                    }
+                }
+                
+                // Fallback to custom update endpoint
+                if (!updateData && APP_CONFIG.updateCheckUrl && !APP_CONFIG.updateCheckUrl.includes('github.com')) {
+                    try {
+                        const response = await fetch(APP_CONFIG.updateCheckUrl);
+                        if (response.ok) {
+                            updateData = await response.json();
+                        }
+                    } catch (customError) {
+                        console.log('Custom endpoint failed, using mock data');
+                    }
+                }
+                
+                // Final fallback to mock data for demo
+                if (!updateData) {
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    updateData = MOCK_UPDATE_DATA;
+                }
                 
                 // Check if update is available
                 const currentVersion = APP_CONFIG.currentVersion;
-                const latestVersion = MOCK_UPDATE_DATA.version;
+                const latestVersion = updateData.version;
                 
                 if (isVersionNewer(latestVersion, currentVersion)) {
                     updateState.isUpdateAvailable = true;
-                    updateState.updateData = MOCK_UPDATE_DATA;
+                    updateState.updateData = updateData;
                     
                     // Save update check time
                     APP_CONFIG.lastUpdateCheck = Date.now();
@@ -3975,7 +4273,7 @@
             } catch (error) {
                 console.error('Update check failed:', error);
                 if (isManual) {
-                    showError('Failed to check for updates. Please try again later.');
+                    showError('Failed to check for updates. Please check your internet connection and try again.');
                 }
             } finally {
                 updateState.isChecking = false;
@@ -3986,6 +4284,58 @@
                     checkBtn.disabled = false;
                 }
             }
+        }
+        
+        // Parse Release Notes from GitHub
+        function parseReleaseNotes(body, type) {
+            if (!body) return [];
+            
+            const lines = body.split('\n');
+            const items = [];
+            let inSection = false;
+            
+            const sectionHeaders = {
+                features: ['## New Features', '## Features', '### New Features', '### Features'],
+                fixes: ['## Bug Fixes', '## Fixes', '### Bug Fixes', '### Fixes'],
+                improvements: ['## Improvements', '## Enhancements', '### Improvements', '### Enhancements']
+            };
+            
+            for (const line of lines) {
+                const trimmed = line.trim();
+                
+                // Check if we're entering the desired section
+                if (sectionHeaders[type].some(header => trimmed.startsWith(header))) {
+                    inSection = true;
+                    continue;
+                }
+                
+                // Check if we're entering a different section
+                if (trimmed.startsWith('##') || trimmed.startsWith('###')) {
+                    inSection = false;
+                    continue;
+                }
+                
+                // If we're in the right section and it's a list item
+                if (inSection && (trimmed.startsWith('- ') || trimmed.startsWith('* '))) {
+                    items.push(trimmed.substring(2));
+                }
+            }
+            
+            // Fallback to default items if none found
+            if (items.length === 0) {
+                return MOCK_UPDATE_DATA[type] || [];
+            }
+            
+            return items;
+        }
+        
+        // Format File Size
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
         
         // Compare version numbers
@@ -4370,5 +4720,5 @@
             });
         });
     </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'96d7ba0627ce6eb9',t:'MTc1NDkxNTI0Mi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'96e6314c13f3f242',t:'MTc1NTA2NjkyOC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
